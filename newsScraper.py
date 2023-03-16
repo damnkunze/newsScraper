@@ -1,25 +1,29 @@
 import urllib
-import os
+import re # RegEX
+# import os # For VPN
 
 from selenium.webdriver.common.by import By
 
 class Article():
-    def __init__(self, title, source, url):
+    def __init__(self, title, source, url_full, url_netloc):
         self.title = title
         self.source = source
-        self.url = url
+        self.url_full = url_full
+        self.url_netloc = url_netloc
 
     # To string conversion
     def __str__(self):
-        return f"{self.title}\n{self.source}\n{self.url}\n"
+        return f"{self.title}\n{self.source}\n{self.url_full}\n"
     
 # format queries to requestable urls
-def start_requests(file, queries, date):
-    # Remove file if exists already
+def prepare_requests(file, queries, date):
+    # Empty file if exists already
     open(file, 'w').close()
+
     urls = []
-    
     for i in range(len(queries)):
+        # Encode in URL format
+        # FIXME: Encode special characters
         queries[i].replace(" ", "_")
 
         urls.append(f"https://duckduckgo.com/?q={queries[i]}&df={date}..{date}")
@@ -36,45 +40,47 @@ def getScreenshot(driver, urlToCheck, screenshotSaveName):
         print(e)
         return "error"
 
-# Filter out article if not on topic
+# Filter out article if not meeting requirements (eg: is on topic)
 def meetsRequirements(driver, url_link, article_requirements):
     driver.get(url_link)
-    getScreenshot(driver, url_link, "TESTBRE.png")
-
-    val = "Klima"
-    klima = driver.find_element(By.XPATH, f"//body[contains(text(), '{val}')]")
-    print("OI!")
-    print(klima)
-
-    contains_all_of = True
-    # for value in article_requirements['all of']:
-    #     print("Öh?")
-    #     if not driver.find_element(By.XPATH, f"//*[text()='{value}']"):
-    #         print("Für dich heute leider nicht")
-    #         contains_all_of = False
-    
-    contains_one_of = True
-    #contains_one_of = False
-    #for value in article_requirements['one of']:
-    #    if not driver.find_element(By.XPATH, f"//*[text()='{value}']"):
-    #        contains_one_of = True
-
-    if contains_all_of and contains_one_of:
-        return True
-    return False
-
-def extractNews(driver, urlToCheck, extendResults, blocklist, article_requirements):    
-    print(urlToCheck + " fetched!")
+    #getScreenshot(driver, url_link, "TESTBRE.png")
 
     try:
+        body = driver.find_element(By.CSS_SELECTOR, 'body').get_attribute('innerHTML')
+
+    except Exception as e:
+        print(e)
+        return False
+
+    # bool(re.search(value, body)) is case-insensitive
+
+    for value in article_requirements['all of']:
+        if not bool(re.search(value, body, re.IGNORECASE)):
+            print("misses mandatory " + value + ":", url_link)
+            return False
+    
+    contains_one_of = False
+    for value in article_requirements['one of']:
+        if bool(re.search(value, body, re.IGNORECASE)):
+            contains_one_of = True
+            break
+
+    print("tudo bem:" if contains_one_of else "no extra keywords:", url_link)
+    #return contains_one_of
+    return True
+
+def extractNews(driver, urlToCheck, extendResults):    
+    try:
         # Scrape Page
+        print("fetching...")
         driver.get(urlToCheck)
+        print(urlToCheck + " fetched!")
 
         # Set region to germany
         driver.find_element(By.CSS_SELECTOR, ".dropdown__switch").click()
 
-        # Ask for more results
-        for i in range(extendResults):
+        # Ask for more results n times
+        for _ in range(extendResults):
             driver.find_element(By.CSS_SELECTOR, ".result--more").click()
         
         # Find all search results (articles) elements
@@ -88,18 +94,18 @@ def extractNews(driver, urlToCheck, extendResults, blocklist, article_requiremen
     for article_elem in articles_elems:
         try:
             title = article_elem.find_element(By.CSS_SELECTOR, "div:nth-child(2) > h2:nth-child(1) > a:nth-child(1) > span:nth-child(1)").text
-            url_link = article_elem.find_element(By.CSS_SELECTOR, "div:nth-child(2) > h2:nth-child(1) > a:nth-child(1)").get_attribute("href")
+            url_full = article_elem.find_element(By.CSS_SELECTOR, "div:nth-child(2) > h2:nth-child(1) > a:nth-child(1)").get_attribute("href")
         except Exception as e:
             print("element error ", e)
             return False
 
-        parsed_url = urllib.parse.urlparse(url_link).netloc
-        source = ".".join(parsed_url.split(".")[0:-1]) # Get site name without TLD, eg. news.bre.de => news.bre
+        url_netloc = urllib.parse.urlparse(url_full).netloc
+        source = ".".join(url_netloc.split(".")[0:-1]) # Get site name without TLD, eg. news.bre.de => news.bre
 
-        if parsed_url not in blocklist:
-            if meetsRequirements(driver, url_link, article_requirements):
-                article = Article(title, source, url_link)
-                articles.append(article)
+        article = Article(title, source, url_full, url_netloc)
+        articles.append(article)
+
+    print("Extracted " + str(len(articles)) + " articles!")
 
     return articles
 
