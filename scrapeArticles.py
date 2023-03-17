@@ -52,20 +52,21 @@ for url in urls:
 
     curr_articles = extractNews(driver, url, extendResultsTimes)
 
-    # Remove article domains in blocklist
-    curr_articles = [a for a in curr_articles if a.url_netloc not in domain_blocklist]
-    #list(filter(lambda article: article.url_netloc not in domain_blocklist, curr_articles))
-    
-    # Remove articles not fullfilling requirements
-    curr_articles = [a for a in curr_articles if meetsRequirements(driver, a.url_full, article_has_to_include)]
-    #list(filter(lambda article: meetsRequirements(driver, article.url_full, article_has_to_include), curr_articles))
+    if curr_articles:
+        # Remove article domains in blocklist
+        curr_articles = [a for a in curr_articles if a.url_netloc not in domain_blocklist]
+        #list(filter(lambda article: article.url_netloc not in domain_blocklist, curr_articles))
+        
+        # Remove articles not fullfilling requirements
+        curr_articles = [a for a in curr_articles if meetsRequirements(driver, a.url_full, article_has_to_include)]
+        #list(filter(lambda article: meetsRequirements(driver, article.url_full, article_has_to_include), curr_articles))
 
-    # Check for doubles and Append
-    for article in curr_articles:
-        duplicate = len([a for a in all_articles if article.url_full == a.url_full])
-        if duplicate: print("duplicate!!! " + article.url_full) 
-        if not duplicate:
-            all_articles.append(article)
+        # Check for doubles and Append
+        for article in curr_articles:
+            duplicate = len([a for a in all_articles if article.url_full == a.url_full])
+            if duplicate: print("duplicate!!! " + article.url_full) 
+            if not duplicate:
+                all_articles.append(article)
 
 # Save articles to file
 saveNews(all_articles, filename)

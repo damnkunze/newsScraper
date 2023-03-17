@@ -81,7 +81,10 @@ def extractNews(driver, urlToCheck, extendResults):
 
         # Ask for more results n times
         for _ in range(extendResults):
-            driver.find_element(By.CSS_SELECTOR, ".result--more").click()
+            try:
+                driver.find_element(By.CSS_SELECTOR, ".result--more").click()
+            except:
+                break
         
         # Find all search results (articles) elements
         articles_elems = driver.find_elements(By.TAG_NAME, "article")
