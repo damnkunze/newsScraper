@@ -1,7 +1,9 @@
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 
-from newsScraper import Article, prepare_requests, extractNews, saveNews, meetsRequirements, getScreenshot
+from newsScraper import Article, prepare_requests, extractNews, saveNews, \
+                        notInBlocklist, isNotDuplicate, meetsRequirements, \
+                        getScreenshot
 
 # CONFIG =============================================================
 date = "2023-03-15"
@@ -22,14 +24,10 @@ extendResultsTimes = 0
 # domains to ignore
 domain_blocklist = [
     "duckduckgo.com",
-    "www.reddit.com",
+    "reddit.com",
     "instagram.com",
     "letztegeneration.de"
 ]
-
-# Known problematic sites
-# www.msn.com, www.zeit.de, de.nachrichten.yahoo.com, 
-
 
 # requirements for articles
 article_has_to_include = {
@@ -46,26 +44,22 @@ driver = webdriver.Firefox(options=options)
 urls = prepare_requests(filename, search_queries, date)
 
 all_articles = []
-for url in urls:
+for i, url in enumerate(urls):
     # Connect to VPN?
     # For debugging: # getScreenshot(driver, url, filename_screenshot)
 
-    curr_articles = extractNews(driver, url, extendResultsTimes)
+    curr_articles = extractNews(driver, url, extendResultsTimes, search_queries[i])
 
     if curr_articles:
         # Remove article domains in blocklist
-        curr_articles = [a for a in curr_articles if a.url_netloc not in domain_blocklist]
-        #list(filter(lambda article: article.url_netloc not in domain_blocklist, curr_articles))
+        curr_articles = [a for a in curr_articles if notInBlocklist(a, domain_blocklist)]
         
         # Remove articles not fullfilling requirements
-        curr_articles = [a for a in curr_articles if meetsRequirements(driver, a.url_full, article_has_to_include)]
-        #list(filter(lambda article: meetsRequirements(driver, article.url_full, article_has_to_include), curr_articles))
+        curr_articles = [a for a in curr_articles if meetsRequirements(driver, a, article_has_to_include)]
 
         # Check for doubles and Append
         for article in curr_articles:
-            duplicate = len([a for a in all_articles if article.url_full == a.url_full])
-            if duplicate: print("duplicate!!! " + article.url_full) 
-            if not duplicate:
+            if isNotDuplicate(article, all_articles):
                 all_articles.append(article)
 
 # Save articles to file

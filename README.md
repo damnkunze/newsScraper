@@ -4,6 +4,10 @@ Search engine scraping for media coverage data collection
 # Internal:
 
 ## Future Features
+- Multiproccessing
+```py
+from multiprocessing import Process
+```
 - Block Cookie Banners & Adblock 
   - uBlock Origin
 https://stackoverflow.com/questions/52153398/how-can-i-add-an-external-extension-into-selenium-chrome-python
