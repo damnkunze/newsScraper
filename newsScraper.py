@@ -1,22 +1,31 @@
 import urllib
-import re 
+import re, os
+import threading
 
+from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait 
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 
+from selenium_stealth import stealth
+from fake_useragent import UserAgent
+
 class Article():
-    def __init__(self, title, source, url_full, url_domain, query):
+    def __init__(self, url_full, title = None, source = None, url_domain = None, query = None):
         self.title = title
         self.source = source
         self.url_full = url_full
         self.url_domain = url_domain
-        self.relevance_score = 0
         self.query = query
-
+        self.relevance_score = 0
+    
     # To string conversion
-    def __str__(self):
+    def __repr__(self):
+        return f"{self.title} - {self.url_domain}\n"
+    
+    # For exporting in three lines to a file
+    def exportToFile(self):
         return f"{self.title}\n{self.source}\n{self.url_full}\n"
 
 # Known problematic sites: popup closer buttons
@@ -26,10 +35,19 @@ known_problematic = {
     "nachrichten.yahoo.com": "button.btn:nth-child(6)", 
 }
 
+# domains to ignore
+domain_blocklist = [
+    "duckduckgo.com",
+    "reddit.com",
+    "instagram.com",
+    "letztegeneration.de"
+]
+
 # format queries to requestable urls
-def prepare_requests(file, queries, date):
+def prepare_requests(file, file_to_review, queries, date):
     # Empty file if exists already
     open(file, 'w').close()
+    open(file_to_review, 'w').close()
 
     urls = []
     for i in range(len(queries)):
@@ -42,11 +60,43 @@ def prepare_requests(file, queries, date):
 
     return urls
 
+threadLocal = threading.local()
+
+def get_local_driver():
+    # persist driver instance in thread
+    driver = getattr(threadLocal, 'driver', None)
+
+    if driver is None:
+        options = webdriver.ChromeOptions()
+
+        # To stay undetected as a bot
+        userAgent = UserAgent().random
+        options.add_argument(f'user-agent={userAgent}')
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+
+        #chromeOptions.add_argument("--headless")
+        driver = webdriver.Chrome(options=options)
+
+        # To stay undetected as a bot
+        # stealth(driver,
+        #         languages=["en-US", "en"],
+        #         vendor="Google Inc.",
+        #         platform="Win32",
+        #         webgl_vendor="Intel Inc.",
+        #         renderer="Intel Iris OpenGL Engine",
+        #         fix_hairline=True,
+        #         )
+
+        setattr(threadLocal, 'driver', driver)
+
+    return driver
+
 def getPage(driver, url):
-    print("fetching...")
+    print("fetching...", url)
     try: 
         driver.get(url)
-        print(url + " fetched!")
+        print("fetched!", url)
         return True
     except: 
         # NOT allowed to fail, if fail skip iteration
@@ -109,7 +159,7 @@ def extractArticles(driver, extendResults, query):
         # Site name without TLD, eg. news.bre.de => news.bre
         source = ".".join(url_netloc.split(".")[0:-1]) 
 
-        article = Article(title, source, url_full, url_domain, query)
+        article = Article(url_full, title, source, url_domain, query)
         articles.append(article)
 
     print("Extracted " + str(len(articles)) + " articles!")
@@ -139,15 +189,24 @@ def closePopup(driver, article):
         return False
 
 def saveArticles(articles, file):
+    print("SAVING!", articles, file)
     file = open(file, "a")
 
     for article in articles:
-        file.write(str(article))
+        file.write(article.exportToFile())
 
     file.close()
-    print("Saved " + str(len(articles)) + " valid articles!")
+    print("Saved " + str(len(articles)) + " articles!")
 
+def close_local_driver(_):
+    print(f"closing driver in thread {threading.get_ident()}!")
 
+    get_local_driver().quit()
+
+def close_drivers():
+    print("killing all drivers!")
+    # killall Google\ Chrome
+    os.system("killall Google\ Chrome")
 
 
 
