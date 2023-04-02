@@ -16,7 +16,6 @@ def isQualified(article, points_threshold):
     return True
 
 def isToReview(article, points_threshold):
-    # relevance score needs to be above the points threshold and not -1 which represents completely off-topic
     if article.relevance_score < points_threshold or article.relevance_score == -1:
         print("relevance score:", article.relevance_score, "NOT TO REVIEW")
         return False
