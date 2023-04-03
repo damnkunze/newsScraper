@@ -1,106 +1,96 @@
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 
-from newsScraper import Article, known_problematic, domain_blocklist, \
-    getPage, prepare_requests, extractArticles, saveArticles, \
-    inDomainBlocklist, isNotDuplicate, closePopup
+from multiprocessing.pool import ThreadPool
+import threading
 
-from relevanceTester import calculateRelevance, isRelevant
+from config import search_queries, date, extendResultsTimes, filename, filename_to_review, \
+    threads, known_problematic, domain_blocklist, \
+    relevancy_rating_points, points_threshold_qualified, points_threshold_to_review
 
-# CONFIG =============================================================
-date = "2023-03-15"
-# If the date lies farther in the past prefer to crawl legally at:
-# https://commoncrawl.org/the-data/get-started/
+from newsScraper import Article, get_local_driver, \
+    getPage, get_url, prepare_requests, clearFiles, extractArticles, saveArticles, \
+    inDomainBlocklist, isNotDuplicate, closePopup, close_drivers, close_local_driver
 
-search_queries = [
-    "Letzte Generation",
-    "Klima Kleber",
-    "Klima Protest", 
-    "Last Generation", 
-    "German Climate Activists"
-]
+from relevanceTester import calculateRelevance, isQualified, isToReview
 
-filename = f"News_{date}.txt"
-filename_screenshot = f"News_{date}.png"
+qualified_articles = []
+to_review_articles = []
 
-# press "more results" button n times
-extendResultsTimes = 0
+# Capsuled in a function to allow threading
+def checkArticle(article):
+    driver = get_local_driver()
 
-# Amount of relevance points nessesary to be marked as relevant
-points_threshold = 8
+    # Skip if in blocklist
+    if inDomainBlocklist(article, domain_blocklist):
+        return
 
-# Amount of relevance points given
-relevancy_rating_points = {
-    'forbidden words': ["Österreich", "Austria", "Just Stop Oil"],
-    'qualifying words': ["Letzte Generation", "Letzten Generation", "Letzte-Generation", "Letzten-Generation", "Klima Kleber", "Klimakleber", "Klima Klebern",  "Klimaklebern", "Klima-Kleber", "Klima-Klebern", "Klima Protest", "Klima-Protest", "Klima Aktivist", "Klima-Aktivist", "Klimaaktivist", "Last Generation", "German Climate Activists"],
+    # Check if is known problematic site and click popup away
+    # if article.url_domain in known_problematic.keys():
+    #     if not closePopup(driver, article):
+    #         return
+
+    print(f"starting thread: {threading.get_ident()}, checking article: {article.url_full}")
+
+    # Fetch article page
+    gotArticlePage = getPage(driver, article.url_full)
+
+    if not gotArticlePage:
+        return
+
+    # Rate relevance of article
+    calculateRelevance(driver, article, relevancy_rating_points)
+
+    # Check for doubles and Append
+    if isQualified(article, points_threshold_qualified) and isNotDuplicate(article, qualified_articles):
+        qualified_articles.append(article)
+
+    elif isToReview(article, points_threshold_to_review) and isNotDuplicate(article, to_review_articles):
+        to_review_articles.append(article)
     
-    'query in url path': 5,
-    'query in title': 5,
-    'query in heading': 5,
-    'query in body': 3,
-    
-    'qualifying words in html': 3,
-    
-    # "Protest" includes "Protestaktion" and "Blockade" includes "Straßenblockade"
-    'bonus words in html': 2,
-    'bonus words': ["Klima Bewegung", "Aktivist", "Blockade", "Straßenblockade", "Protest", ]
-}
-
-# ====================================================================
+# ==============================================
 print("starting up...")
 
 options = Options()
 #options.add_argument('-headless')
-driver = webdriver.Firefox(options=options)
+main_driver = webdriver.Firefox(options=options)
 
-urls = prepare_requests(filename, search_queries, date)
+clearFiles(filename, filename_to_review)
 
-all_articles = []
-for i, url in enumerate(urls):
+with ThreadPool(processes=threads) as pool:
+    for query in search_queries:
+        
+        url = get_url(search_queries, date)
 
-    # Fetch DuckDuckGo search results
-    gotResultsPage = getPage(driver, url)
+        # Fetch DuckDuckGo search results
+        gotResultsPage = getPage(main_driver, url)
 
-    # NOT allowed to fail, 'continue' skips iteration
-    if not gotResultsPage:
-        continue
+        # NOT allowed to fail, 'continue' skips iteration
+        if not gotResultsPage:
+            continue
+        
+        # Extract articles from DuckDuckGo search results page
+        curr_articles = extractArticles(main_driver, extendResultsTimes, search_queries[i])
+
+        if not curr_articles:
+            continue
+
+        # Here the threading happens
+        pool.map(checkArticle, curr_articles)
     
-    # Extract articles from DuckDuckGo search results page
-    curr_articles = extractArticles(driver, extendResultsTimes, search_queries[i])
+        print(f"all current articles: {curr_articles}")
 
-    if not curr_articles:
-        continue
+    # Save qualified articles to file
+    saveArticles(qualified_articles, filename)
 
-    for article in curr_articles:
-        # Skip if in blocklist
-        if inDomainBlocklist(article, domain_blocklist):
-            continue
+    # Save to review articles to file
+    saveArticles(to_review_articles, filename_to_review)
 
-        # Check if is known problematic site and click popup away
-        if article.url_domain in known_problematic.keys():
-            if not closePopup(driver, article):
-                continue
+    # Close local driver
+    # pool.map(close_local_driver, [1] * threads)
 
-        # Fetch article page
-        gotArticlePage = getPage(driver, article.url_full)
+# Kill all Google Chrome 
+# close_drivers()
 
-        if not gotArticlePage:
-            continue
-
-        # Rate relevance of article
-        calculateRelevance(driver, article, relevancy_rating_points)
-
-        # Check if off topic
-        if not isRelevant(article, points_threshold):
-            continue
-
-        # Check for doubles and Append
-        if isNotDuplicate(article, all_articles):
-            all_articles.append(article)
-
-# Save articles to file
-saveArticles(all_articles, filename)
-
-print("shutting down...")
-driver.quit()
-
+print("shutting down main driver...")
+main_driver.quit()

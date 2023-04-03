@@ -44,11 +44,7 @@ domain_blocklist = [
 ]
 
 # format queries to requestable urls
-def prepare_requests(file, file_to_review, queries, date):
-    # Empty file if exists already
-    open(file, 'w').close()
-    open(file_to_review, 'w').close()
-
+def get_url(queries, date):
     urls = []
     for i in range(len(queries)):
         # Encode in URL format
@@ -57,8 +53,12 @@ def prepare_requests(file, file_to_review, queries, date):
 
         urls.append(f"https://duckduckgo.com/?q={queries[i]}&df={date}..{date}")
         # For testing: #urls.append(f"https://www.google.com/search?q={queries[i]}")
-
     return urls
+
+# Empty file if exists already
+def clearFiles(file, file_to_review):
+    open(file, 'w').close()
+    open(file_to_review, 'w').close()
 
 threadLocal = threading.local()
 
@@ -75,6 +75,11 @@ def get_local_driver():
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option('useAutomationExtension', False)
 
+        # Add Adblock & Cookie Banner blocker extension
+        ublock_path = "ublock"
+        options.add_argument(f'--load-extension={ublock_path}')
+
+        # FIXME: not headless for debugging
         #chromeOptions.add_argument("--headless")
         driver = webdriver.Chrome(options=options)
 
@@ -207,55 +212,3 @@ def close_drivers():
     print("killing all drivers!")
     # killall Google\ Chrome
     os.system("killall Google\ Chrome")
-
-
-
-
-
-
-
-
-# Filter out article if not meeting requirements (eg: is on topic)
-def meetsRequirements(driver, article, article_requirements):
-    url_link = article.url_full
-
-    driver.get(url_link)
-    ##getScreenshot(driver, url_link, "TESTBRE.png")
-
-    #calculateArticleRelevance(driver, article)
-
-    try:
-        body = driver.find_element(By.CSS_SELECTOR, 'body').get_attribute('innerHTML')
-
-    except NoSuchElementException as e:
-        print(e)
-        return False
-
-    # Check if contains all keywords in article_requirements['all of']
-    for value in article_requirements['all of']:
-        # case-insensitive RegEx
-        if not bool(re.search(value, body, re.IGNORECASE)):
-            print("misses mandatory " + value + ":", url_link)
-            return False
-
-    # Check if contains one keyword in article_requirements['one of']
-    # FIXME: Currently just optional
-    contains_one_of = False
-    for value in article_requirements['one of']:
-        if bool(re.search(value, body, re.IGNORECASE)):
-            contains_one_of = True
-            break
-
-    print("tudo bem:" if contains_one_of else "no extra keywords:", url_link)
-    #return contains_one_of
-    return True
-
-# For debugging: # getScreenshot(driver, url, filename_screenshot)
-def getScreenshot(driver, urlToCheck, screenshotSaveName):
-    try:
-        driver.save_screenshot(screenshotSaveName)
-        print("\nSCREENSHOT SAVED AT " + screenshotSaveName + " OF " + urlToCheck)
-
-    except Exception as e:
-        print(e)
-        return "error"
